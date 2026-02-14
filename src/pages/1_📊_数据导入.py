@@ -269,21 +269,20 @@ with col_import2:
                 pairs = {}
                 for filename in file_dict:
                     if '行程单' in filename:
-                        base_name = filename.replace('行程单', '发票')
+                        base_name = filename.replace('行程单', '')
                         if base_name not in pairs:
                             pairs[base_name] = {}
                         pairs[base_name]['itinerary'] = filename
                     elif '发票' in filename:
-                        base_name = filename.replace('发票', '行程单')
+                        base_name = filename.replace('发票', '')
                         if base_name not in pairs:
                             pairs[base_name] = {}
                         pairs[base_name]['invoice'] = filename
                 
                 valid_records = []
-                invalid_records = []
+                invalid_pairs = []
                 duplicate_records = []
                 parse_failed = []
-                saved_files = []
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -301,11 +300,6 @@ with col_import2:
                     
                     if not itinerary_file:
                         parse_failed.append(f"{base_name} - 缺少行程单，无法解析数据")
-                        if invoice_file:
-                            inv_data = file_dict[invoice_file]
-                            saved_path = os.path.join(month_upload_dir, invoice_file)
-                            with open(saved_path, 'wb') as f:
-                                f.write(inv_data.getbuffer())
                         continue
                     
                     itinerary_data = file_dict[itinerary_file]
@@ -339,17 +333,21 @@ with col_import2:
                             saved_path = os.path.join(month_upload_dir, itinerary_file)
                             with open(saved_path, 'wb') as f:
                                 f.write(itinerary_data.getbuffer())
-                            saved_files.append(itinerary_file)
                             
                             if invoice_file:
                                 invoice_data = file_dict[invoice_file]
                                 saved_path = os.path.join(month_upload_dir, invoice_file)
                                 with open(saved_path, 'wb') as f:
                                     f.write(invoice_data.getbuffer())
-                                saved_files.append(invoice_file)
                     else:
-                        record['invalid_reason'] = validation['reason']
-                        invalid_records.append(record)
+                        invalid_pairs.append({
+                            'base_name': base_name,
+                            'itinerary_file': itinerary_file,
+                            'invoice_file': invoice_file,
+                            'date': record['date'],
+                            'amount': record['amount'],
+                            'reason': validation['reason']
+                        })
                 
                 progress_bar.empty()
                 status_text.empty()
@@ -370,14 +368,16 @@ with col_import2:
                         } for r in duplicate_records])
                         st.dataframe(df_dup, use_container_width=True, hide_index=True)
                 
-                if invalid_records:
-                    st.warning(f"⚠️ {len(invalid_records)} 条记录不符合条件，未导入")
-                    with st.expander("查看不符合条件的记录"):
+                if invalid_pairs:
+                    st.warning(f"⚠️ {len(invalid_pairs)} 对文件不符合条件，已排除")
+                    with st.expander("查看不符合条件的文件对"):
                         df_invalid = pd.DataFrame([{
-                            '日期': r.get('date', ''),
-                            '金额': r.get('amount', 0),
-                            '原因': r.get('invalid_reason', '')
-                        } for r in invalid_records])
+                            '行程单': p['itinerary_file'],
+                            '发票单': p['invoice_file'] if p['invoice_file'] else '无',
+                            '日期': p['date'],
+                            '金额': p['amount'],
+                            '原因': p['reason']
+                        } for p in invalid_pairs])
                         st.dataframe(df_invalid, use_container_width=True, hide_index=True)
                 
                 if parse_failed:
