@@ -121,8 +121,8 @@ with tab2:
         df_invoice = df_invoice.sort_values('date')
         df_invoice['date_str'] = df_invoice['date'].dt.strftime('%Y-%m-%d')
         
-        df_display = df_invoice[['date_str', 'amount', 'company', 'start_location', 'end_location', 'source_file']].copy()
-        df_display.columns = ['日期', '金额', '服务商', '起点', '终点', '来源文件']
+        df_display = df_invoice[['date_str', 'amount', 'company', 'start_location', 'end_location', 'source_file', 'invoice_file']].copy()
+        df_display.columns = ['日期', '金额', '服务商', '起点', '终点', '行程单', '发票单']
         
         st.dataframe(
             df_display,

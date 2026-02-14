@@ -55,10 +55,16 @@ def init_db():
             end_location TEXT,
             company TEXT,
             source_file TEXT,
+            invoice_file TEXT,
             month_folder TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    try:
+        cursor.execute('ALTER TABLE invoice_records ADD COLUMN invoice_file TEXT')
+    except:
+        pass
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reimburse_records (
@@ -246,8 +252,8 @@ def save_invoice_records(records: List[Dict], month_folder: str):
         
         cursor.execute('''
             INSERT INTO invoice_records 
-            (invoice_type, date, amount, start_location, end_location, company, source_file, month_folder)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (invoice_type, date, amount, start_location, end_location, company, source_file, invoice_file, month_folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             record.get('invoice_type', 'taxi'),
             date_val,
@@ -256,6 +262,7 @@ def save_invoice_records(records: List[Dict], month_folder: str):
             record.get('end_location', ''),
             record.get('company', ''),
             record.get('source_file', ''),
+            record.get('invoice_file', ''),
             month_folder
         ))
     
@@ -267,7 +274,7 @@ def get_invoice_records(month_folder: Optional[str] = None, invoice_type: Option
     cursor = conn.cursor()
     
     query = '''
-        SELECT id, invoice_type, date, amount, start_location, end_location, company, source_file, month_folder, created_at
+        SELECT id, invoice_type, date, amount, start_location, end_location, company, source_file, invoice_file, month_folder, created_at
         FROM invoice_records
         WHERE 1=1
     '''
@@ -296,8 +303,9 @@ def get_invoice_records(month_folder: Optional[str] = None, invoice_type: Option
         'end_location': r[5],
         'company': r[6],
         'source_file': r[7],
-        'month_folder': r[8],
-        'created_at': r[9]
+        'invoice_file': r[8],
+        'month_folder': r[9],
+        'created_at': r[10]
     } for r in results]
 
 def update_invoice_record(record_id: int, **kwargs):

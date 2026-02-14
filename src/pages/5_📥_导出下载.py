@@ -312,33 +312,21 @@ def create_taxi_zip(excel_data, month_folder, file_name, validated_records):
             for record in validated_records:
                 invoice = record['invoice']
                 source_file = invoice.get('source_file', '')
-                if not source_file:
-                    continue
+                invoice_file = invoice.get('invoice_file', '')
                 
-                if source_file in added_files:
-                    continue
+                if source_file and source_file not in added_files:
+                    file_path = os.path.join(month_upload_dir, source_file)
+                    if os.path.exists(file_path):
+                        with open(file_path, 'rb') as f:
+                            zf.writestr(f"附件/{source_file}", f.read())
+                        added_files.add(source_file)
                 
-                file_path = os.path.join(month_upload_dir, source_file)
-                if os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        zf.writestr(f"附件/{source_file}", f.read())
-                    added_files.add(source_file)
-                    
-                    if '行程单' in source_file:
-                        invoice_file = source_file.replace('行程单', '发票')
-                        invoice_path = os.path.join(month_upload_dir, invoice_file)
-                        if os.path.exists(invoice_path) and invoice_file not in added_files:
-                            with open(invoice_path, 'rb') as f:
-                                zf.writestr(f"附件/{invoice_file}", f.read())
-                            added_files.add(invoice_file)
-                    
-                    elif '发票' in source_file:
-                        itinerary_file = source_file.replace('发票', '行程单')
-                        itinerary_path = os.path.join(month_upload_dir, itinerary_file)
-                        if os.path.exists(itinerary_path) and itinerary_file not in added_files:
-                            with open(itinerary_path, 'rb') as f:
-                                zf.writestr(f"附件/{itinerary_file}", f.read())
-                            added_files.add(itinerary_file)
+                if invoice_file and invoice_file not in added_files:
+                    file_path = os.path.join(month_upload_dir, invoice_file)
+                    if os.path.exists(file_path):
+                        with open(file_path, 'rb') as f:
+                            zf.writestr(f"附件/{invoice_file}", f.read())
+                        added_files.add(invoice_file)
     
     zip_buffer.seek(0)
     return zip_buffer
@@ -507,6 +495,8 @@ with tab2:
                 '起点': invoice.get('start_location', ''),
                 '终点': invoice.get('end_location', ''),
                 '金额': f"¥{invoice['amount']:.2f}",
+                '行程单': invoice.get('source_file', ''),
+                '发票单': invoice.get('invoice_file', ''),
                 '工作时长': f"{record['work_hours']:.1f}h" if record['work_hours'] > 0 else '-',
                 '状态': '✅' if record['valid'] else '❌',
                 '原因': record['reason']

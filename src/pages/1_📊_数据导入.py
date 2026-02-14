@@ -250,69 +250,115 @@ with col_import1:
         st.info("请先上传打卡文件")
 
 with col_import2:
-    st.markdown("#### 发票数据导入（自动校验+去重）")
+    st.markdown("#### 发票数据导入（自动配对+校验+去重）")
     
     start_date, end_date = get_expense_month_range(current_month)
     expense_month_str = f"{start_date} ~ {end_date}" if start_date else "未知"
     st.caption(f"费用月份范围: {expense_month_str}")
+    st.caption("💡 提示：请同时上传行程单和发票PDF，系统会自动配对")
     
     if invoice_files:
         st.info(f"已选择 {len(invoice_files)} 个文件")
         
         if st.button("解析并导入发票数据", type="primary", key='import_invoice_btn'):
-            with st.spinner("正在解析和校验发票文件..."):
+            with st.spinner("正在配对和解析发票文件..."):
+                def get_pair_key(filename):
+                    if '行程单' in filename:
+                        return filename.replace('行程单', '发票'), 'itinerary'
+                    elif '发票' in filename:
+                        return filename.replace('发票', '行程单'), 'invoice'
+                    return None, None
+                
+                file_dict = {}
+                for file in invoice_files:
+                    file_dict[file.name] = file
+                
+                pairs = {}
+                for filename in file_dict:
+                    pair_key, file_type = get_pair_key(filename)
+                    if pair_key:
+                        if pair_key not in pairs:
+                            pairs[pair_key] = {}
+                        pairs[pair_key][file_type] = filename
+                
                 valid_records = []
                 invalid_records = []
                 duplicate_records = []
-                parse_failed = 0
+                parse_failed = []
+                saved_files = []
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                for i, file in enumerate(invoice_files):
-                    status_text.text(f"正在处理: {file.name}")
-                    progress_bar.progress((i + 1) / len(invoice_files))
+                month_upload_dir = os.path.join(UPLOADS_DIR, current_month)
+                os.makedirs(month_upload_dir, exist_ok=True)
+                
+                pair_items = list(pairs.items())
+                for i, (pair_key, pair_files) in enumerate(pair_items):
+                    status_text.text(f"正在处理: {pair_key}")
+                    progress_bar.progress((i + 1) / len(pair_items))
                     
-                    temp_path = utils.save_uploaded_file(file, temp_dir)
+                    itinerary_file = pair_files.get('itinerary')
+                    invoice_file = pair_files.get('invoice')
+                    
+                    if not itinerary_file:
+                        parse_failed.append(f"{pair_key} - 缺少行程单")
+                        continue
+                    
+                    itinerary_data = file_dict[itinerary_file]
+                    temp_path = utils.save_uploaded_file(itinerary_data, temp_dir)
                     
                     record = utils.parse_taxi_pdf(temp_path)
-                    
-                    if record and record.get('amount', 0) > 0:
-                        record['source_file'] = file.name
-                        
-                        validation = validate_invoice_for_import(record, current_month)
-                        
-                        if validation['valid']:
-                            date_str = record['date'].strftime('%Y-%m-%d') if hasattr(record['date'], 'strftime') else str(record['date'])
-                            
-                            if db.invoice_exists(date_str, record['amount'], current_month):
-                                record['duplicate_reason'] = '重复记录（同日期同金额已存在）'
-                                duplicate_records.append(record)
-                            else:
-                                valid_records.append(record)
-                                
-                                month_upload_dir = os.path.join(UPLOADS_DIR, current_month)
-                                os.makedirs(month_upload_dir, exist_ok=True)
-                                saved_path = os.path.join(month_upload_dir, file.name)
-                                with open(saved_path, 'wb') as f:
-                                    f.write(file.getbuffer())
-                        else:
-                            record['invalid_reason'] = validation['reason']
-                            invalid_records.append(record)
-                    else:
-                        parse_failed += 1
                     
                     try:
                         os.remove(temp_path)
                     except:
                         pass
+                    
+                    if not record or record.get('amount', 0) <= 0:
+                        parse_failed.append(f"{itinerary_file} - 解析失败")
+                        continue
+                    
+                    record['source_file'] = itinerary_file
+                    record['invoice_file'] = invoice_file if invoice_file else ''
+                    
+                    validation = validate_invoice_for_import(record, current_month)
+                    
+                    if validation['valid']:
+                        date_str = record['date'].strftime('%Y-%m-%d') if hasattr(record['date'], 'strftime') else str(record['date'])
+                        
+                        if db.invoice_exists(date_str, record['amount'], current_month):
+                            record['duplicate_reason'] = '重复记录（同日期同金额已存在）'
+                            duplicate_records.append(record)
+                        else:
+                            valid_records.append(record)
+                            
+                            saved_path = os.path.join(month_upload_dir, itinerary_file)
+                            with open(saved_path, 'wb') as f:
+                                f.write(itinerary_data.getbuffer())
+                            saved_files.append(itinerary_file)
+                            
+                            if invoice_file:
+                                invoice_data = file_dict[invoice_file]
+                                saved_path = os.path.join(month_upload_dir, invoice_file)
+                                with open(saved_path, 'wb') as f:
+                                    f.write(invoice_data.getbuffer())
+                                saved_files.append(invoice_file)
+                    else:
+                        record['invalid_reason'] = validation['reason']
+                        invalid_records.append(record)
+                
+                for filename, file in file_dict.items():
+                    if filename not in saved_files:
+                        if '行程单' not in filename and '发票' not in filename:
+                            parse_failed.append(f"{filename} - 无法识别文件类型")
                 
                 progress_bar.empty()
                 status_text.empty()
                 
                 if valid_records:
                     db.save_invoice_records(valid_records, current_month)
-                    st.success(f"✅ 成功导入 {len(valid_records)} 条符合条件的发票记录！")
+                    st.success(f"✅ 成功导入 {len(valid_records)} 条发票记录（含配对的行程单+发票单）！")
                 
                 if duplicate_records:
                     st.warning(f"⚠️ {len(duplicate_records)} 条重复记录已跳过")
@@ -320,6 +366,8 @@ with col_import2:
                         df_dup = pd.DataFrame([{
                             '日期': r.get('date', ''),
                             '金额': r.get('amount', 0),
+                            '行程单': r.get('source_file', ''),
+                            '发票单': r.get('invoice_file', ''),
                             '原因': r.get('duplicate_reason', '')
                         } for r in duplicate_records])
                         st.dataframe(df_dup, use_container_width=True, hide_index=True)
@@ -334,13 +382,22 @@ with col_import2:
                         } for r in invalid_records])
                         st.dataframe(df_invalid, use_container_width=True, hide_index=True)
                 
-                if parse_failed > 0:
-                    st.error(f"❌ {parse_failed} 个文件解析失败")
+                if parse_failed:
+                    st.error(f"❌ {len(parse_failed)} 个文件处理失败")
+                    with st.expander("查看失败详情"):
+                        for msg in parse_failed:
+                            st.write(f"- {msg}")
                 
                 if valid_records:
                     with st.expander("查看已导入数据预览"):
-                        df = pd.DataFrame(valid_records)
-                        df['date'] = df['date'].apply(lambda x: x.strftime('%Y-%m-%d') if hasattr(x, 'strftime') else str(x))
+                        df = pd.DataFrame([{
+                            '日期': r.get('date', ''),
+                            '金额': r.get('amount', 0),
+                            '起点': r.get('start_location', ''),
+                            '终点': r.get('end_location', ''),
+                            '行程单': r.get('source_file', ''),
+                            '发票单': r.get('invoice_file', '')
+                        } for r in valid_records])
                         st.dataframe(df, use_container_width=True, hide_index=True)
                 
                 if not valid_records and not invalid_records and not duplicate_records:
@@ -375,8 +432,8 @@ with col2:
     if invoice_records:
         df_invoice = pd.DataFrame(invoice_records)
         df_invoice['date'] = pd.to_datetime(df_invoice['date']).dt.strftime('%Y-%m-%d')
-        df_invoice = df_invoice[['date', 'amount', 'company', 'source_file']]
-        df_invoice.columns = ['日期', '金额', '服务商', '来源文件']
+        df_invoice = df_invoice[['date', 'amount', 'company', 'source_file', 'invoice_file']]
+        df_invoice.columns = ['日期', '金额', '服务商', '行程单', '发票单']
         st.dataframe(df_invoice, use_container_width=True, hide_index=True)
         st.info(f"共 {len(invoice_records)} 条记录，总金额: ¥{sum(r['amount'] for r in invoice_records):.2f}")
     else:
