@@ -3,7 +3,9 @@ import os
 import sys
 import json
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+sys.path.insert(0, SRC_DIR)
 
 import database as db
 
@@ -150,7 +152,7 @@ with tab2:
     st.markdown("### 输出设置配置")
     
     output_config = db.get_config('output') or {
-        'default_name': '刘明康',
+        'default_name': '姓名',
         'night_meal_template': '{name}_晚餐、夜宵报销明细表_{month}月.xls',
         'taxi_template': '{name}_加班打车报销明细表_{month}月.xls'
     }

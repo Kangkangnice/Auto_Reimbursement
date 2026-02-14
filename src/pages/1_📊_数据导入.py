@@ -4,7 +4,9 @@ import sys
 from datetime import datetime, date
 import pandas as pd
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+sys.path.insert(0, SRC_DIR)
 
 import database as db
 import utils
@@ -141,7 +143,7 @@ st.markdown("### 📁 月份识别")
 auto_detected_month = None
 detection_source = None
 
-temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
+temp_dir = os.path.join(PROJECT_ROOT, 'temp')
 os.makedirs(temp_dir, exist_ok=True)
 
 if checkin_file is not None:

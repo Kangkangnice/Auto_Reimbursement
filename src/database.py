@@ -4,7 +4,18 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reimburse.db')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+DB_DIR = os.path.join(DATA_DIR, 'db')
+CONFIG_DIR = os.path.join(DATA_DIR, 'config')
+UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
+
+for dir_path in [DB_DIR, CONFIG_DIR, UPLOADS_DIR, OUTPUT_DIR]:
+    os.makedirs(dir_path, exist_ok=True)
+
+DB_PATH = os.path.join(DB_DIR, 'reimburse.db')
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
@@ -96,7 +107,7 @@ def init_default_config(cursor):
             }
         }),
         'output': json.dumps({
-            'default_name': '刘明康',
+            'default_name': '姓名',
             'night_meal_template': '{name}_晚餐、夜宵报销明细表_{month}月.xls',
             'taxi_template': '{name}_加班打车报销明细表_{month}月.xls'
         }),
@@ -484,3 +495,5 @@ def clear_month_data(month_folder: str):
 if __name__ == '__main__':
     init_db()
     print("数据库初始化完成")
+    print(f"数据库路径: {DB_PATH}")
+    print(f"配置路径: {CONFIG_PATH}")

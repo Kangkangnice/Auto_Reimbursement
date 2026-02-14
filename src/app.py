@@ -2,7 +2,9 @@ import streamlit as st
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+sys.path.insert(0, SRC_DIR)
 
 import database as db
 

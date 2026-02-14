@@ -5,9 +5,11 @@ import pandas as pd
 import xlwt
 import zipfile
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+sys.path.insert(0, SRC_DIR)
 
 import database as db
 import utils
@@ -51,13 +53,6 @@ with col_info:
 
 st.markdown("---")
 
-def get_month_folder_path(month_folder):
-    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, month_folder)
-
-def get_invoice_folder_path(month_folder):
-    return os.path.join(get_month_folder_path(month_folder), '发票')
-
 def get_expense_month_range(month_folder):
     try:
         year = 2000 + int(month_folder[:2])
@@ -69,7 +64,6 @@ def get_expense_month_range(month_folder):
             expense_month = 12
             expense_year = year - 1
         
-        from datetime import date
         start_date = date(expense_year, expense_month, 1)
         if expense_month == 12:
             end_date = date(expense_year + 1, 1, 1) - pd.Timedelta(days=1)
@@ -154,7 +148,7 @@ def generate_night_meal_excel(checkin_records, month_folder):
     night_threshold = config['night_meal']['night_threshold']
     night_amount = config['night_meal']['night_amount']
     
-    output_config = db.get_config('output') or {'default_name': '刘明康'}
+    output_config = db.get_config('output') or {'default_name': '姓名'}
     default_name = output_config['default_name']
     
     worksheet.write(0, 0, '晚餐、夜宵报销明细')
@@ -231,7 +225,7 @@ def generate_taxi_excel(validated_records, month_folder):
     config = db.get_config('reimburse_rules') or {'taxi': {'threshold': 11.0}}
     taxi_threshold = config['taxi']['threshold']
     
-    output_config = db.get_config('output') or {'default_name': '刘明康'}
+    output_config = db.get_config('output') or {'default_name': '姓名'}
     default_name = output_config['default_name']
     
     worksheet.write(0, 0, f'打车报销明细（工作时长≥{taxi_threshold}小时）')
@@ -281,69 +275,6 @@ def generate_taxi_excel(validated_records, month_folder):
     output.seek(0)
     
     return output, len(validated_records), total_amount
-
-def create_night_meal_zip(excel_data, month_folder, file_name):
-    zip_buffer = BytesIO()
-    
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(file_name, excel_data.getvalue())
-        
-        month_path = get_month_folder_path(month_folder)
-        
-        if os.path.exists(month_path):
-            for file in os.listdir(month_path):
-                if '打卡' in file and (file.endswith('.xlsx') or file.endswith('.xls')):
-                    file_path = os.path.join(month_path, file)
-                    with open(file_path, 'rb') as f:
-                        zf.writestr(f"附件/{file}", f.read())
-    
-    zip_buffer.seek(0)
-    return zip_buffer
-
-def create_taxi_zip(excel_data, month_folder, file_name, validated_records):
-    zip_buffer = BytesIO()
-    
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(file_name, excel_data.getvalue())
-        
-        invoice_folder = get_invoice_folder_path(month_folder)
-        
-        if os.path.exists(invoice_folder):
-            added_files = set()
-            
-            for record in validated_records:
-                invoice = record['invoice']
-                source_file = invoice.get('source_file', '')
-                if not source_file:
-                    continue
-                
-                if source_file in added_files:
-                    continue
-                
-                file_path = os.path.join(invoice_folder, source_file)
-                if os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        zf.writestr(f"附件/{source_file}", f.read())
-                    added_files.add(source_file)
-                    
-                    if '行程单' in source_file:
-                        invoice_file = source_file.replace('行程单', '发票')
-                        invoice_path = os.path.join(invoice_folder, invoice_file)
-                        if os.path.exists(invoice_path) and invoice_file not in added_files:
-                            with open(invoice_path, 'rb') as f:
-                                zf.writestr(f"附件/{invoice_file}", f.read())
-                            added_files.add(invoice_file)
-                    
-                    elif '发票' in source_file:
-                        itinerary_file = source_file.replace('发票', '行程单')
-                        itinerary_path = os.path.join(invoice_folder, itinerary_file)
-                        if os.path.exists(itinerary_path) and itinerary_file not in added_files:
-                            with open(itinerary_path, 'rb') as f:
-                                zf.writestr(f"附件/{itinerary_file}", f.read())
-                            added_files.add(itinerary_file)
-    
-    zip_buffer.seek(0)
-    return zip_buffer
 
 tab1, tab2 = st.tabs(["🍽️ 晚餐夜宵报销", "🚗 打车报销"])
 
@@ -402,7 +333,7 @@ with tab1:
         
         st.markdown("---")
         
-        col_gen, col_down, col_zip = st.columns([1, 1, 1])
+        col_gen, col_down = st.columns([1, 1])
         
         with col_gen:
             if st.button("📊 生成报销明细", type="primary", use_container_width=True, key='gen_night_meal'):
@@ -416,7 +347,7 @@ with tab1:
         
         with col_down:
             if 'night_meal_excel' in st.session_state:
-                output_config = db.get_config('output') or {'default_name': '刘明康'}
+                output_config = db.get_config('output') or {'default_name': '姓名'}
                 default_name = output_config['default_name']
                 month_num = selected_month[-2:]
                 file_name = f"{default_name}_晚餐、夜宵报销明细表_{month_num}月.xls"
@@ -429,33 +360,6 @@ with tab1:
                     use_container_width=True,
                     key='download_night_meal'
                 )
-        
-        with col_zip:
-            if 'night_meal_excel' in st.session_state:
-                output_config = db.get_config('output') or {'default_name': '刘明康'}
-                default_name = output_config['default_name']
-                month_num = selected_month[-2:]
-                file_name = f"{default_name}_晚餐、夜宵报销明细表_{month_num}月.xls"
-                zip_name = f"{default_name}_晚餐夜宵报销_{month_num}月.zip"
-                
-                if st.button("📦 打包下载(含打卡文件)", use_container_width=True, key='zip_night_meal'):
-                    zip_data = create_night_meal_zip(
-                        st.session_state['night_meal_excel'],
-                        selected_month,
-                        file_name
-                    )
-                    st.session_state['night_meal_zip'] = zip_data
-                    st.session_state['night_meal_zip_name'] = zip_name
-                
-                if 'night_meal_zip' in st.session_state:
-                    st.download_button(
-                        label=f"📥 下载 {st.session_state['night_meal_zip_name']}",
-                        data=st.session_state['night_meal_zip'],
-                        file_name=st.session_state['night_meal_zip_name'],
-                        mime="application/zip",
-                        use_container_width=True,
-                        key='download_night_meal_zip'
-                    )
     else:
         st.warning("该月份暂无打卡记录")
 
@@ -522,7 +426,7 @@ with tab2:
         else:
             st.markdown("---")
             
-            col_gen, col_down, col_zip = st.columns([1, 1, 1])
+            col_gen, col_down = st.columns([1, 1])
             
             with col_gen:
                 if st.button("📊 生成报销明细", type="primary", use_container_width=True, key='gen_taxi'):
@@ -538,7 +442,7 @@ with tab2:
             
             with col_down:
                 if 'taxi_excel' in st.session_state:
-                    output_config = db.get_config('output') or {'default_name': '刘明康'}
+                    output_config = db.get_config('output') or {'default_name': '姓名'}
                     default_name = output_config['default_name']
                     month_num = selected_month[-2:]
                     file_name = f"{default_name}_加班打车报销明细表_{month_num}月.xls"
@@ -551,35 +455,6 @@ with tab2:
                         use_container_width=True,
                         key='download_taxi'
                     )
-            
-            with col_zip:
-                if 'taxi_excel' in st.session_state:
-                    output_config = db.get_config('output') or {'default_name': '刘明康'}
-                    default_name = output_config['default_name']
-                    month_num = selected_month[-2:]
-                    file_name = f"{default_name}_加班打车报销明细表_{month_num}月.xls"
-                    zip_name = f"{default_name}_打车报销_{month_num}月.zip"
-                    
-                    if st.button("📦 打包下载(含发票附件)", use_container_width=True, key='zip_taxi'):
-                        valid_records = st.session_state.get('taxi_validated_records', [r for r in validated_records if r['valid']])
-                        zip_data = create_taxi_zip(
-                            st.session_state['taxi_excel'],
-                            selected_month,
-                            file_name,
-                            valid_records
-                        )
-                        st.session_state['taxi_zip'] = zip_data
-                        st.session_state['taxi_zip_name'] = zip_name
-                    
-                    if 'taxi_zip' in st.session_state:
-                        st.download_button(
-                            label=f"📥 下载 {st.session_state['taxi_zip_name']}",
-                            data=st.session_state['taxi_zip'],
-                            file_name=st.session_state['taxi_zip_name'],
-                            mime="application/zip",
-                            use_container_width=True,
-                            key='download_taxi_zip'
-                        )
     else:
         st.warning("该月份暂无发票记录")
 

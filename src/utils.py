@@ -7,6 +7,11 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 import database as db
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
+
 def parse_checkin_excel(file_path: str) -> Tuple[List[Dict], str]:
     records = []
     error_msg = ""
