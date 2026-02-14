@@ -11,6 +11,9 @@ sys.path.insert(0, SRC_DIR)
 import database as db
 import utils
 
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
+
 st.set_page_config(
     page_title="数据导入 - 报销管理系统",
     page_icon="📊",
@@ -223,6 +226,13 @@ with col_import1:
                 
                 if records:
                     db.save_checkin_records(records, current_month, checkin_file.name)
+                    
+                    month_upload_dir = os.path.join(UPLOADS_DIR, current_month)
+                    os.makedirs(month_upload_dir, exist_ok=True)
+                    saved_path = os.path.join(month_upload_dir, checkin_file.name)
+                    with open(saved_path, 'wb') as f:
+                        f.write(checkin_file.getbuffer())
+                    
                     st.success(f"成功导入 {len(records)} 条打卡记录到 {current_month}！")
                     
                     with st.expander("查看导入数据预览"):
@@ -240,7 +250,7 @@ with col_import1:
         st.info("请先上传打卡文件")
 
 with col_import2:
-    st.markdown("#### 发票数据导入（自动校验）")
+    st.markdown("#### 发票数据导入（自动校验+去重）")
     
     start_date, end_date = get_expense_month_range(current_month)
     expense_month_str = f"{start_date} ~ {end_date}" if start_date else "未知"
@@ -253,6 +263,7 @@ with col_import2:
             with st.spinner("正在解析和校验发票文件..."):
                 valid_records = []
                 invalid_records = []
+                duplicate_records = []
                 parse_failed = 0
                 
                 progress_bar = st.progress(0)
@@ -272,7 +283,19 @@ with col_import2:
                         validation = validate_invoice_for_import(record, current_month)
                         
                         if validation['valid']:
-                            valid_records.append(record)
+                            date_str = record['date'].strftime('%Y-%m-%d') if hasattr(record['date'], 'strftime') else str(record['date'])
+                            
+                            if db.invoice_exists(date_str, record['amount'], current_month):
+                                record['duplicate_reason'] = '重复记录（同日期同金额已存在）'
+                                duplicate_records.append(record)
+                            else:
+                                valid_records.append(record)
+                                
+                                month_upload_dir = os.path.join(UPLOADS_DIR, current_month)
+                                os.makedirs(month_upload_dir, exist_ok=True)
+                                saved_path = os.path.join(month_upload_dir, file.name)
+                                with open(saved_path, 'wb') as f:
+                                    f.write(file.getbuffer())
                         else:
                             record['invalid_reason'] = validation['reason']
                             invalid_records.append(record)
@@ -290,6 +313,16 @@ with col_import2:
                 if valid_records:
                     db.save_invoice_records(valid_records, current_month)
                     st.success(f"✅ 成功导入 {len(valid_records)} 条符合条件的发票记录！")
+                
+                if duplicate_records:
+                    st.warning(f"⚠️ {len(duplicate_records)} 条重复记录已跳过")
+                    with st.expander("查看重复记录"):
+                        df_dup = pd.DataFrame([{
+                            '日期': r.get('date', ''),
+                            '金额': r.get('amount', 0),
+                            '原因': r.get('duplicate_reason', '')
+                        } for r in duplicate_records])
+                        st.dataframe(df_dup, use_container_width=True, hide_index=True)
                 
                 if invalid_records:
                     st.warning(f"⚠️ {len(invalid_records)} 条记录不符合条件，未导入")
@@ -310,7 +343,7 @@ with col_import2:
                         df['date'] = df['date'].apply(lambda x: x.strftime('%Y-%m-%d') if hasattr(x, 'strftime') else str(x))
                         st.dataframe(df, use_container_width=True, hide_index=True)
                 
-                if not valid_records and not invalid_records:
+                if not valid_records and not invalid_records and not duplicate_records:
                     st.error("所有文件解析失败，请检查文件格式")
     else:
         st.info("请先上传发票文件")
@@ -374,84 +407,126 @@ st.markdown("---")
 
 st.markdown("### 🔧 数据校验与清理")
 
-if st.button("🔍 检查不符合条件的发票记录", key='check_invalid_btn'):
-    invoice_records = db.get_invoice_records(current_month)
-    checkin_records = db.get_checkin_records(current_month)
-    
-    config = db.get_config('reimburse_rules') or {'taxi': {'threshold': 11.0}}
-    taxi_threshold = config['taxi']['threshold']
-    
-    invalid_records = []
-    
-    for invoice in invoice_records:
-        invoice_date_str = invoice['date'] if isinstance(invoice['date'], str) else invoice['date'].strftime('%Y-%m-%d')
+col_check1, col_check2, col_check3 = st.columns([1, 1, 1])
+
+with col_check1:
+    if st.button("🔍 检查不符合条件的发票", key='check_invalid_btn'):
+        invoice_records = db.get_invoice_records(current_month)
+        checkin_records = db.get_checkin_records(current_month)
         
-        start_date, end_date = get_expense_month_range(current_month)
+        config = db.get_config('reimburse_rules') or {'taxi': {'threshold': 11.0}}
+        taxi_threshold = config['taxi']['threshold']
         
-        try:
-            invoice_date = datetime.strptime(invoice_date_str, '%Y-%m-%d').date()
-        except:
-            invalid_records.append({
-                'id': invoice['id'],
-                'date': invoice_date_str,
-                'amount': invoice['amount'],
-                'reason': '日期格式错误'
-            })
-            continue
+        invalid_records = []
         
-        if start_date and end_date:
-            if invoice_date < start_date or invoice_date > end_date:
+        for invoice in invoice_records:
+            invoice_date_str = invoice['date'] if isinstance(invoice['date'], str) else invoice['date'].strftime('%Y-%m-%d')
+            
+            start_date, end_date = get_expense_month_range(current_month)
+            
+            try:
+                invoice_date = datetime.strptime(invoice_date_str, '%Y-%m-%d').date()
+            except:
                 invalid_records.append({
                     'id': invoice['id'],
                     'date': invoice_date_str,
                     'amount': invoice['amount'],
-                    'reason': f'日期不在费用月份范围({start_date}~{end_date})'
+                    'reason': '日期格式错误'
                 })
                 continue
+            
+            if start_date and end_date:
+                if invoice_date < start_date or invoice_date > end_date:
+                    invalid_records.append({
+                        'id': invoice['id'],
+                        'date': invoice_date_str,
+                        'amount': invoice['amount'],
+                        'reason': f'日期不在费用月份范围({start_date}~{end_date})'
+                    })
+                    continue
+            
+            matching_checkin = None
+            for checkin in checkin_records:
+                checkin_date_str = checkin['date'] if isinstance(checkin['date'], str) else checkin['date'].strftime('%Y-%m-%d')
+                if checkin_date_str == invoice_date_str:
+                    matching_checkin = checkin
+                    break
+            
+            if not matching_checkin:
+                invalid_records.append({
+                    'id': invoice['id'],
+                    'date': invoice_date_str,
+                    'amount': invoice['amount'],
+                    'reason': '无对应打卡记录'
+                })
+                continue
+            
+            work_hours = matching_checkin['work_hours']
+            if work_hours < taxi_threshold:
+                invalid_records.append({
+                    'id': invoice['id'],
+                    'date': invoice_date_str,
+                    'amount': invoice['amount'],
+                    'reason': f'工作时长{work_hours}h未达到{taxi_threshold}h阈值'
+                })
         
-        matching_checkin = None
-        for checkin in checkin_records:
-            checkin_date_str = checkin['date'] if isinstance(checkin['date'], str) else checkin['date'].strftime('%Y-%m-%d')
-            if checkin_date_str == invoice_date_str:
-                matching_checkin = checkin
-                break
+        if invalid_records:
+            st.warning(f"发现 {len(invalid_records)} 条不符合条件的发票记录")
+            
+            df_invalid = pd.DataFrame(invalid_records)
+            df_invalid = df_invalid[['date', 'amount', 'reason']]
+            df_invalid.columns = ['日期', '金额', '原因']
+            st.dataframe(df_invalid, use_container_width=True, hide_index=True)
+            
+            st.session_state['invalid_invoice_ids'] = [r['id'] for r in invalid_records]
+            
+            if st.button("🗑️ 删除不符合条件的记录", type="primary", key='delete_invalid_btn'):
+                for record_id in st.session_state['invalid_invoice_ids']:
+                    db.delete_invoice_record(record_id)
+                st.success(f"已删除 {len(st.session_state['invalid_invoice_ids'])} 条不符合条件的记录")
+                st.session_state['invalid_invoice_ids'] = []
+                st.rerun()
+        else:
+            st.success("✅ 所有发票记录都符合条件！")
+
+with col_check2:
+    if st.button("🔍 检查重复数据", key='check_duplicate_btn'):
+        duplicate_invoices = db.get_duplicate_invoice_records(current_month)
         
-        if not matching_checkin:
-            invalid_records.append({
-                'id': invoice['id'],
-                'date': invoice_date_str,
-                'amount': invoice['amount'],
-                'reason': '无对应打卡记录'
-            })
-            continue
-        
-        work_hours = matching_checkin['work_hours']
-        if work_hours < taxi_threshold:
-            invalid_records.append({
-                'id': invoice['id'],
-                'date': invoice_date_str,
-                'amount': invoice['amount'],
-                'reason': f'工作时长{work_hours}h未达到{taxi_threshold}h阈值'
-            })
+        if duplicate_invoices:
+            st.warning(f"发现 {len(duplicate_invoices)} 条重复的发票记录")
+            
+            df_dup = pd.DataFrame([{
+                '日期': r['date'],
+                '金额': r['amount'],
+                '来源文件': r['source_file']
+            } for r in duplicate_invoices])
+            st.dataframe(df_dup, use_container_width=True, hide_index=True)
+            
+            if st.button("🗑️ 删除重复记录", type="primary", key='delete_dup_btn'):
+                deleted_count = db.delete_duplicate_invoice_records(current_month)
+                st.success(f"已删除 {deleted_count} 条重复记录")
+                st.rerun()
+        else:
+            st.success("✅ 没有发现重复数据！")
+
+with col_check3:
+    if st.button("🗑️ 初始化系统（删除所有数据）", type="secondary", key='init_system_btn'):
+        st.session_state['confirm_init'] = True
     
-    if invalid_records:
-        st.warning(f"发现 {len(invalid_records)} 条不符合条件的发票记录")
-        
-        df_invalid = pd.DataFrame(invalid_records)
-        df_invalid = df_invalid[['date', 'amount', 'reason']]
-        df_invalid.columns = ['日期', '金额', '原因']
-        st.dataframe(df_invalid, use_container_width=True, hide_index=True)
-        
-        st.session_state['invalid_invoice_ids'] = [r['id'] for r in invalid_records]
-        
-        if st.button("🗑️ 删除所有不符合条件的记录", type="primary", key='delete_invalid_btn'):
-            for record_id in st.session_state['invalid_invoice_ids']:
-                db.delete_invoice_record(record_id)
-            st.success(f"已删除 {len(st.session_state['invalid_invoice_ids'])} 条不符合条件的记录")
-            st.session_state['invalid_invoice_ids'] = []
-            st.rerun()
-    else:
-        st.success("✅ 所有发票记录都符合条件！")
+    if st.session_state.get('confirm_init', False):
+        st.warning("⚠️ 此操作将删除所有数据，不可恢复！")
+        col_confirm1, col_confirm2 = st.columns(2)
+        with col_confirm1:
+            if st.button("✅ 确认初始化", type="primary", key='confirm_init_btn'):
+                db.clear_all_data()
+                st.success("系统已初始化，所有数据已清除")
+                st.session_state['confirm_init'] = False
+                st.rerun()
+        with col_confirm2:
+            if st.button("❌ 取消", key='cancel_init_btn'):
+                st.session_state['confirm_init'] = False
+                st.rerun()
 
 st.markdown("---")
 
@@ -466,6 +541,7 @@ st.markdown("""
 - 发票日期必须在费用月份范围内（报销月份 - 1）
 - 例如：报销月份 `25_05`，则发票日期应在 2025年4月
 - 不符合条件的发票将不会导入
+- **自动去重**：同日期同金额的发票不会重复导入
 
 **打车报销条件（导出时校验）：**
 - 发票日期必须有对应的打卡记录

@@ -492,6 +492,120 @@ def clear_month_data(month_folder: str):
     conn.commit()
     conn.close()
 
+def clear_all_data():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM checkin_records')
+    cursor.execute('DELETE FROM invoice_records')
+    cursor.execute('DELETE FROM reimburse_records')
+    cursor.execute('DELETE FROM export_history')
+    
+    conn.commit()
+    conn.close()
+
+def get_duplicate_checkin_records(month_folder: str) -> List[Dict]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, date, work_hours, month_folder, source_file, created_at, COUNT(*) as cnt
+        FROM checkin_records
+        WHERE month_folder = ?
+        GROUP BY date
+        HAVING cnt > 1
+    ''', (month_folder,))
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    return [{
+        'id': r[0],
+        'date': r[1],
+        'work_hours': r[2],
+        'month_folder': r[3],
+        'source_file': r[4],
+        'created_at': r[5],
+        'count': r[6]
+    } for r in results]
+
+def get_duplicate_invoice_records(month_folder: str) -> List[Dict]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, date, amount, source_file, month_folder, created_at
+        FROM invoice_records
+        WHERE month_folder = ?
+        ORDER BY date, amount, created_at
+    ''', (month_folder,))
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    seen = {}
+    duplicates = []
+    
+    for r in results:
+        key = (r[1], r[2])
+        if key in seen:
+            duplicates.append({
+                'id': r[0],
+                'date': r[1],
+                'amount': r[2],
+                'source_file': r[3],
+                'month_folder': r[4],
+                'created_at': r[5]
+            })
+        else:
+            seen[key] = r[0]
+    
+    return duplicates
+
+def delete_duplicate_invoice_records(month_folder: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, date, amount FROM invoice_records
+        WHERE month_folder = ?
+        ORDER BY date, amount, created_at
+    ''', (month_folder,))
+    
+    results = cursor.fetchall()
+    
+    seen = {}
+    ids_to_delete = []
+    
+    for r in results:
+        key = (r[1], r[2])
+        if key in seen:
+            ids_to_delete.append(r[0])
+        else:
+            seen[key] = r[0]
+    
+    if ids_to_delete:
+        placeholders = ','.join('?' * len(ids_to_delete))
+        cursor.execute(f'DELETE FROM invoice_records WHERE id IN ({placeholders})', ids_to_delete)
+        conn.commit()
+    
+    conn.close()
+    return len(ids_to_delete)
+
+def invoice_exists(date_str: str, amount: float, month_folder: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT COUNT(*) FROM invoice_records
+        WHERE date = ? AND amount = ? AND month_folder = ?
+    ''', (date_str, amount, month_folder))
+    
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    return count > 0
+
 if __name__ == '__main__':
     init_db()
     print("数据库初始化完成")
