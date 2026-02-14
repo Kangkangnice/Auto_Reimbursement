@@ -1,0 +1,53 @@
+{
+  "reimburse_rules": {
+    "night_meal": {
+      "dinner_threshold": 9.5,
+      "dinner_amount": 18,
+      "night_threshold": 12,
+      "night_amount": 20
+    },
+    "taxi": {
+      "threshold": 11.0
+    }
+  },
+  "file_paths": {
+    "month_folder_pattern": "\\d{2}_\\d{2}",
+    "checkin_file_pattern": "打卡",
+    "invoice_folder_name": "发票",
+    "taxi_invoice_pattern": "行程单",
+    "report_folder_name": "报告"
+  },
+  "excel_settings": {
+    "checkin_sheet_name": "概况统计与打卡明细",
+    "checkin_skip_rows": 3,
+    "work_hours_columns": ["实际工作时长(小时)", "实际工作时长", "工作时长", "Actual Work Hours"],
+    "header_style": {
+      "font_bold": true,
+      "font_size": 12,
+      "alignment": "center"
+    },
+    "data_style": {
+      "font_size": 11,
+      "alignment": "left"
+    }
+  },
+  "output": {
+    "default_name": "刘明康",
+    "night_meal_template": "{name}_晚餐、夜宵报销明细表_{month}月.xls",
+    "taxi_template": "{name}_加班打车报销明细表_{month}月.xls"
+  },
+  "invoice_types": {
+    "taxi": {
+      "extensions": [".pdf"],
+      "patterns": ["行程单", "打车", "出租车", "Taxi", "Cab"],
+      "fields": ["date", "amount", "start_location", "end_location", "company"]
+    }
+  },
+  "pdf_extraction": {
+    "timeout": 30,
+    "retry_attempts": 3,
+    "text_cleanup": true,
+    "table_extraction": true
+  },
+  "date_formats": ["%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%m/%d/%Y", "%d/%m/%Y"]
+}

@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.trae/
+.github/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Temp files
+temp/
+tmp/
+*.tmp
+
+# Personal data folders (keep only example)
+25_*/
+26_*/
+2*_*/
+
+# Test files
+test_*.py
+check_*.py
+view_*.py
+list_*.py
+debug_*.py
+create_*.py
+
+# Generated reports (keep templates)
+# *.xls
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Keep example folder
+!example_*/
