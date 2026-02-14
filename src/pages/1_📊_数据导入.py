@@ -262,24 +262,22 @@ with col_import2:
         
         if st.button("解析并导入发票数据", type="primary", key='import_invoice_btn'):
             with st.spinner("正在配对和解析发票文件..."):
-                def get_pair_key(filename):
-                    if '行程单' in filename:
-                        return filename.replace('行程单', '发票'), 'itinerary'
-                    elif '发票' in filename:
-                        return filename.replace('发票', '行程单'), 'invoice'
-                    return None, None
-                
                 file_dict = {}
                 for file in invoice_files:
                     file_dict[file.name] = file
                 
                 pairs = {}
                 for filename in file_dict:
-                    pair_key, file_type = get_pair_key(filename)
-                    if pair_key:
-                        if pair_key not in pairs:
-                            pairs[pair_key] = {}
-                        pairs[pair_key][file_type] = filename
+                    if '行程单' in filename:
+                        base_name = filename.replace('行程单', '发票')
+                        if base_name not in pairs:
+                            pairs[base_name] = {}
+                        pairs[base_name]['itinerary'] = filename
+                    elif '发票' in filename:
+                        base_name = filename.replace('发票', '行程单')
+                        if base_name not in pairs:
+                            pairs[base_name] = {}
+                        pairs[base_name]['invoice'] = filename
                 
                 valid_records = []
                 invalid_records = []
@@ -294,15 +292,20 @@ with col_import2:
                 os.makedirs(month_upload_dir, exist_ok=True)
                 
                 pair_items = list(pairs.items())
-                for i, (pair_key, pair_files) in enumerate(pair_items):
-                    status_text.text(f"正在处理: {pair_key}")
+                for i, (base_name, pair_files) in enumerate(pair_items):
+                    status_text.text(f"正在处理: {base_name}")
                     progress_bar.progress((i + 1) / len(pair_items))
                     
                     itinerary_file = pair_files.get('itinerary')
                     invoice_file = pair_files.get('invoice')
                     
                     if not itinerary_file:
-                        parse_failed.append(f"{pair_key} - 缺少行程单")
+                        parse_failed.append(f"{base_name} - 缺少行程单，无法解析数据")
+                        if invoice_file:
+                            inv_data = file_dict[invoice_file]
+                            saved_path = os.path.join(month_upload_dir, invoice_file)
+                            with open(saved_path, 'wb') as f:
+                                f.write(inv_data.getbuffer())
                         continue
                     
                     itinerary_data = file_dict[itinerary_file]
@@ -347,11 +350,6 @@ with col_import2:
                     else:
                         record['invalid_reason'] = validation['reason']
                         invalid_records.append(record)
-                
-                for filename, file in file_dict.items():
-                    if filename not in saved_files:
-                        if '行程单' not in filename and '发票' not in filename:
-                            parse_failed.append(f"{filename} - 无法识别文件类型")
                 
                 progress_bar.empty()
                 status_text.empty()
